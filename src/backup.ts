@@ -54,12 +54,48 @@ const uploadToS3 = async ({ name, path }: { name: string, path: string }) => {
 
   console.log("Backup uploaded to S3...");
 }
+const dumpToFile = async (dbUrl: string, filePath: string) => {
+  console.log(`Dumping ${dbUrl} to file…`);
 
-const dumpToFile = async (filePath: string) => {
+  await new Promise((resolve, reject) => {
+    exec(`pg_dump --dbname=${dbUrl} --format=tar ${env.BACKUP_OPTIONS} | gzip > ${filePath}`,
+      (error, stdout, stderr) => {
+   if (error) {
+        reject({ error: error, stderr: stderr.trimEnd() });
+        return;
+      }
+
+      // check if archive is valid and contains data
+      const isValidArchive = (execSync(`gzip -cd ${filePath} | head -c1`).length == 1) ? true : false;
+      if (isValidArchive == false) {
+        reject({ error: "Backup archive file is invalid or empty; check for errors above" });
+        return;
+      }
+
+      // not all text in stderr will be a critical error, print the error / warning
+      if (stderr != "") {
+        console.log({ stderr: stderr.trimEnd() });
+      }
+
+      console.log("Backup archive file is valid");
+      console.log("Backup filesize:", filesize(statSync(filePath).size));
+
+      // if stderr contains text, let the user know that it was potently just a warning message
+      if (stderr != "") {
+        console.log(`Potential warnings detected; Please ensure the backup file "${path.basename(filePath)}" contains all needed data`);
+      }
+
+      resolve(undefined);
+      });
+  });
+   console.log("DB dumped to file...");
+};
+
+const dumpToFileOld = async (filePath: string) => {
   console.log("Dumping DB to file...");
 
   await new Promise((resolve, reject) => {
-    exec(`pg_dumpall  --format=tar ${env.BACKUP_OPTIONS} | gzip > ${filePath}`, (error, stdout, stderr) => {
+    exec(`pg_dump --dbname=${env.BACKUP_DATABASE_URL} --format=tar ${env.BACKUP_OPTIONS} | gzip > ${filePath}`, (error, stdout, stderr) => {
       if (error) {
         reject({ error: error, stderr: stderr.trimEnd() });
         return;
@@ -104,8 +140,42 @@ const deleteFile = async (path: string) => {
 }
 
 
+const listDatabases = async (clusterUrl: string): Promise<string[]> => {
+  // Recupera todas las DBs no–plantilla excepto `postgres`
+  const query = `SELECT datname FROM pg_database
+                 WHERE datistemplate = false AND datname NOT IN ('postgres');`;
+  const { stdout } = await execProm(`psql "${clusterUrl}" -At -c "${query}"`);
+  return stdout.trim().split("\n").filter(Boolean);
+};
 
 export const backup = async () => {
+  console.log("Initiating DB backup...");
+  
+   const dbs = await listDatabases(env.BACKUP_DATABASE_URL);
+  console.log("Encontradas bases:", dbs.join(", "));
+
+  const date = new Date().toISOString();
+  const timestamp = date.replace(/[:.]+/g, '-');
+ 
+
+
+  for (const db of dbs) {
+   const filename  = `${db}_${env.BACKUP_FILE_PREFIX}-${timestamp}.tar.gz`;
+   const filepath  = path.join(os.tmpdir(), filename);
+
+    // Construye una URL igual que BACKUP_DATABASE_URL pero con la DB actual
+    const dbUrl = env.BACKUP_DATABASE_URL.replace(/\/[^/]+$/, `/${db}`);
+
+    await dumpToFile(dbUrl, filepath);
+    await uploadToS3({ name: filename, path: filepath });
+    await deleteFile(filepath);
+
+    console.log(`✔ Backup de "${db}" completado`);
+  }
+  console.log("DB backup complete...");
+}
+
+export const backupOld = async () => {
   console.log("Initiating DB backup...");
 
   const date = new Date().toISOString();
