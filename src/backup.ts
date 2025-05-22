@@ -1,4 +1,4 @@
-import { exec, execSync } from "child_process";
+import { exec, execSync,execProm } from "child_process";
 import { S3Client, S3ClientConfig, PutObjectCommandInput } from "@aws-sdk/client-s3";
 import { Upload } from "@aws-sdk/lib-storage";
 import { createReadStream, unlink, statSync } from "fs";
