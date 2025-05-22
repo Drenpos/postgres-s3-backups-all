@@ -1,4 +1,4 @@
-import { exec, execSync,execProm } from "child_process";
+import { exec, execSync } from "child_process";
 import { S3Client, S3ClientConfig, PutObjectCommandInput } from "@aws-sdk/client-s3";
 import { Upload } from "@aws-sdk/lib-storage";
 import { createReadStream, unlink, statSync } from "fs";
@@ -140,13 +140,32 @@ const deleteFile = async (path: string) => {
 }
 
 
-const listDatabases = async (clusterUrl: string): Promise<string[]> => {
-  // Recupera todas las DBs no–plantilla excepto `postgres`
-  const query = `SELECT datname FROM pg_database
-                 WHERE datistemplate = false AND datname NOT IN ('postgres');`;
-  const { stdout } = await execProm(`psql "${clusterUrl}" -At -c "${query}"`);
-  return stdout.trim().split("\n").filter(Boolean);
+/**
+ * Devuelve un array con todos los nombres de bases de datos
+ * que no son plantillas ni 'postgres'.
+ */
+const listDatabases = (clusterUrl: string): Promise<string[]> => {
+  return new Promise((resolve, reject) => {
+    const query =
+      `SELECT datname FROM pg_database ` +
+      `WHERE datistemplate = false AND datname NOT IN ('postgres');`;
+
+    // -A  = unaligned   -t = tuples only  → devuelve solo los nombres
+    exec(`psql "${clusterUrl}" -At -c "${query}"`, (error, stdout, stderr) => {
+      if (error) {
+        return reject(error);               // cualquier error crítico
+      }
+
+      if (stderr.trim() !== "") {
+        console.log({ stderr: stderr.trim() }); // avisos o warnings
+      }
+
+      const dbs = stdout.trim().split("\n").filter(Boolean);
+      resolve(dbs);
+    });
+  });
 };
+
 
 export const backup = async () => {
   console.log("Initiating DB backup...");
