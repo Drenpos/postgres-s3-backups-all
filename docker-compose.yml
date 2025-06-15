@@ -1,0 +1,11 @@
+version: '3.8'
+services:
+  postgres-s3-backup:
+    build: .
+    env_file:
+      - .env
+    restart: unless-stopped
+    container_name: postgres-s3-backup
+    # Si necesitas montar volúmenes, descomenta la siguiente línea
+    # volumes:
+    #   - ./backups:/app/backups

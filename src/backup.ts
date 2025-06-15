@@ -191,28 +191,36 @@ const listDatabases = (clusterUrl: string): Promise<string[]> => {
      });
 };
 
-const deleteOldBackups = async (bucketName: string) => {
+export const deleteOldBackups = async () => {
      const clientOptions: S3ClientConfig = {
           region: env.AWS_S3_REGION,
           forcePathStyle: env.AWS_S3_FORCE_PATH_STYLE,
      };
+     if (env.AWS_S3_ENDPOINT) {
+          console.log(`Using custom endpoint: ${env.AWS_S3_ENDPOINT}`);
+          clientOptions.endpoint = env.AWS_S3_ENDPOINT;
+     }
+
      const s3 = new S3Client(clientOptions);
      const fourDaysAgo = new Date(Date.now() - (+env.BK_DAYS || 4) * 24 * 60 * 60 * 1000);
 
      let continuationToken: string | undefined = undefined;
      do {
           const listParams: ListObjectsV2CommandInput = {
-               Bucket: bucketName,
+               Bucket: env.AWS_S3_BUCKET,
                ContinuationToken: continuationToken,
           };
           const listResult: any = await s3.send(new ListObjectsV2Command(listParams));
           const oldObjects = (listResult.Contents || []).filter(
                (obj: any) => obj.LastModified && obj.LastModified < fourDaysAgo,
           );
+          console.log(listResult);
 
           for (const obj of oldObjects) {
                if (obj.Key) {
-                    await s3.send(new DeleteObjectCommand({Bucket: bucketName, Key: obj.Key}));
+                    await s3.send(
+                         new DeleteObjectCommand({Bucket: env.AWS_S3_BUCKET, Key: obj.Key}),
+                    );
                }
           }
 
@@ -224,7 +232,7 @@ export const backup = async () => {
      console.log("Initiating DB backup...");
 
      const dbs = await listDatabases(env.BACKUP_DATABASE_URL);
-     await deleteOldBackups(env.AWS_S3_BUCKET);
+     await deleteOldBackups();
      console.log("Encontradas bases:", dbs.join(", "));
 
      const date = new Date().toISOString();
@@ -243,20 +251,5 @@ export const backup = async () => {
 
           console.log(`✔ Backup de "${db}" completado`);
      }
-     console.log("DB backup complete...");
-};
-
-export const backupOld = async () => {
-     console.log("Initiating DB backup...");
-
-     const date = new Date().toISOString();
-     const timestamp = date.replace(/[:.]+/g, "-");
-     const filename = `${env.BACKUP_FILE_PREFIX}-${timestamp}.tar.gz`;
-     const filepath = path.join(os.tmpdir(), filename);
-
-     await dumpToFileOld(filepath);
-     await uploadToS3({name: filename, path: filepath});
-     await deleteFile(filepath);
-
      console.log("DB backup complete...");
 };
