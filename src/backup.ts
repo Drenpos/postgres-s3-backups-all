@@ -5,6 +5,7 @@ import {
      PutObjectCommandInput,
      ListObjectsV2Command,
      DeleteObjectCommand,
+     ListObjectsV2CommandInput,
 } from "@aws-sdk/client-s3";
 import {Upload} from "@aws-sdk/lib-storage";
 import {createReadStream, unlink, statSync} from "fs";
@@ -191,14 +192,16 @@ const listDatabases = (clusterUrl: string): Promise<string[]> => {
 };
 
 const deleteOldBackups = async (bucketName: string) => {
-     const s3 = new S3Client({
-          /* ...config... */
-     });
+     const clientOptions: S3ClientConfig = {
+          region: env.AWS_S3_REGION,
+          forcePathStyle: env.AWS_S3_FORCE_PATH_STYLE,
+     };
+     const s3 = new S3Client(clientOptions);
      const fourDaysAgo = new Date(Date.now() - (+env.BK_DAYS || 4) * 24 * 60 * 60 * 1000);
 
      let continuationToken: string | undefined = undefined;
      do {
-          const listParams: any = {
+          const listParams: ListObjectsV2CommandInput = {
                Bucket: bucketName,
                ContinuationToken: continuationToken,
           };
