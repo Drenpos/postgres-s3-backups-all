@@ -194,7 +194,7 @@ const deleteOldBackups = async (bucketName: string) => {
      const s3 = new S3Client({
           /* ...config... */
      });
-     const fourDaysAgo = new Date(Date.now() - 4 * 24 * 60 * 60 * 1000);
+     const fourDaysAgo = new Date(Date.now() - (+env.BK_DAYS || 4) * 24 * 60 * 60 * 1000);
 
      let continuationToken: string | undefined = undefined;
      do {
