@@ -1,5 +1,11 @@
 import {exec, execSync} from "child_process";
-import {S3Client, S3ClientConfig, PutObjectCommandInput} from "@aws-sdk/client-s3";
+import {
+     S3Client,
+     S3ClientConfig,
+     PutObjectCommandInput,
+     ListObjectsV2Command,
+     DeleteObjectCommand,
+} from "@aws-sdk/client-s3";
 import {Upload} from "@aws-sdk/lib-storage";
 import {createReadStream, unlink, statSync} from "fs";
 import {filesize} from "filesize";
@@ -184,10 +190,38 @@ const listDatabases = (clusterUrl: string): Promise<string[]> => {
      });
 };
 
+const deleteOldBackups = async (bucketName: string) => {
+     const s3 = new S3Client({
+          /* ...config... */
+     });
+     const fourDaysAgo = new Date(Date.now() - 4 * 24 * 60 * 60 * 1000);
+
+     let continuationToken: string | undefined = undefined;
+     do {
+          const listParams: any = {
+               Bucket: bucketName,
+               ContinuationToken: continuationToken,
+          };
+          const listResult: any = await s3.send(new ListObjectsV2Command(listParams));
+          const oldObjects = (listResult.Contents || []).filter(
+               (obj: any) => obj.LastModified && obj.LastModified < fourDaysAgo,
+          );
+
+          for (const obj of oldObjects) {
+               if (obj.Key) {
+                    await s3.send(new DeleteObjectCommand({Bucket: bucketName, Key: obj.Key}));
+               }
+          }
+
+          continuationToken = listResult.IsTruncated ? listResult.NextContinuationToken : undefined;
+     } while (continuationToken);
+};
+
 export const backup = async () => {
      console.log("Initiating DB backup...");
 
      const dbs = await listDatabases(env.BACKUP_DATABASE_URL);
+     await deleteOldBackups(env.AWS_S3_BUCKET);
      console.log("Encontradas bases:", dbs.join(", "));
 
      const date = new Date().toISOString();
